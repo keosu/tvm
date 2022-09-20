@@ -34,30 +34,22 @@ class CodegenYo(tvm.relay.ExprVisitor):
         # return PrimFuncCodegen(prim_func).create()
 
     def lower(self):
-        print("code lower: ", self.func)
-        
+        print("[relay funcs]: \n", self.func) 
         func = self.func
-        # here just return some string for test
-        return "dummy CODE:" + func.astext()
-
-        # never go here
+        
         tc = relay.backend.te_compiler.get()
         # GetYoTarget
         from .target import GetYoTarget
-        tgt = GetYoTarget()
-        # tgt = tvm.target.Target("yo cpu sim")
-        # s = tc.lower(func)
-        # engine = relay.backend.compile_engine.get()
-        # s = tc.lower(func, tgt)
+        tgt = GetYoTarget() 
+        s = tc.lower(func, tgt)
 
-        with build_config(str(self.target), opt_level=3, debug_flag=3):
-            prim_func = lower_aie(s.schedule, list(s.inputs) + list(s.outputs))
-            lowered_module = tvm.lower(prim_func, simple_mode=True)
-            prim_func = lowered_module.functions[lowered_module.get_global_var("main")]
-            
-            
-            code = self.visit_prim_func(prim_func)
-            return code
+        print("[cached funcs]: \n", s.funcs.functions)
+        return "dummy code"
+
+        # TODO generate code
+        # with build_config(str(self.target), opt_level=3, debug_flag=3): 
+        #     code = self.visit_prim_func(prim_func)
+        #     return code
 
 
 @tvm._ffi.register_func("relay.ext.yo")

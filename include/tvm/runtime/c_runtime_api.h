@@ -122,7 +122,10 @@ typedef enum {
   kDLSDAccel,
   kOpenGL,
   kDLMicroDev,
+
+  kDLYo = 99,
   TVMDeviceExtType_End,  // sentinel value
+
 } TVMDeviceExtType;
 
 #ifdef __cplusplus

@@ -25,6 +25,6 @@ def GetYoTarget(model="yo-dev", options=None):
     opts = ["-keys=yo,numpy,cpu", "-model=%s" % model]
     opts = []
     opts = tvm.target.target._merge_opts(opts, options)
-    target = tvm.target.Target(" ".join(["yox"] + opts))
+    target = tvm.target.Target(" ".join(["yodev"] + opts))
     tvm.target.Target.list_kinds()
     return target

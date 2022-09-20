@@ -436,6 +436,12 @@ TVM_REGISTER_TARGET_KIND("composite", kDLCPU)  // line break
 TVM_REGISTER_TARGET_KIND("test", kDLCPU)  // line break
     .set_target_parser(TestTargetParser);
 
+TVM_REGISTER_TARGET_KIND("yodev", kDLYo)
+    .add_attr_option<Array<String>>("mattr") 
+    .add_attr_option<Bool>("system-lib")
+    .set_default_keys({"yo"})
+    .set_device_type(kDLYo);
+
 /**********  Registry  **********/
 
 TVM_REGISTER_GLOBAL("target.TargetKindGetAttr")
