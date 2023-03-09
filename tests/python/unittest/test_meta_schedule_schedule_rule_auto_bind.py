@@ -16,8 +16,10 @@
 # under the License.
 # pylint: disable=missing-module-docstring,missing-function-docstring,missing-class-docstring
 from tvm import meta_schedule as ms
-from tvm.meta_schedule.testing.schedule_rule import get_rules
-from tvm.meta_schedule.testing.space_generation import check_sketches
+from tvm.meta_schedule.testing.space_generation import (
+    check_sketches,
+    generate_design_space,
+)
 from tvm.script import tir as T
 from tvm.target import Target
 
@@ -34,9 +36,9 @@ def element_wise(var_A: T.handle, var_B: T.handle) -> None:
 
 @T.prim_func
 def reduction_loop_only(
-    A: T.Buffer[2, "float32"],
-    B: T.Buffer[2, "float32"],
-    C: T.Buffer[(), "float32"],
+    A: T.Buffer(2, "float32"),
+    B: T.Buffer(2, "float32"),
+    C: T.Buffer((), "float32"),
 ) -> None:
     for i0 in T.serial(2):
         with T.block("C"):
@@ -50,9 +52,9 @@ def reduction_loop_only(
 
 @T.prim_func
 def zero_dim_add(
-    A: T.Buffer[(), "float32"],
-    B: T.Buffer[(), "float32"],
-    C: T.Buffer[(), "float32"],
+    A: T.Buffer((), "float32"),
+    B: T.Buffer((), "float32"),
+    C: T.Buffer((), "float32"),
 ) -> None:
     with T.block("C"):
         vi = T.axis.spatial(1, 0)
@@ -62,8 +64,8 @@ def zero_dim_add(
 def test_cuda_element_wise():
     @T.prim_func
     def elementwise_0(
-        A: T.Buffer[(512, 512), "float32"],
-        B: T.Buffer[(512, 512), "float32"],
+        A: T.Buffer((512, 512), "float32"),
+        B: T.Buffer((512, 512), "float32"),
     ) -> None:
         # body
         # with T.block("root")
@@ -80,13 +82,12 @@ def test_cuda_element_wise():
         ("SampleCategorical", 5),
     ]
     mod = element_wise
-    actual = ms.TuneContext(
+    actual = generate_design_space(
+        kind="cuda",
         mod=mod,
         target=Target("nvidia/geforce-rtx-3080", host="llvm"),
-        space_generator=ms.space_generator.PostOrderApply(),
-        sch_rules=get_rules("cuda", ms.schedule_rule.AutoBind),
-        task_name="test",
-    ).generate_design_space()
+        types=ms.schedule_rule.AutoBind,
+    )
     check_sketches(
         mod,
         sketches=actual,
@@ -98,9 +99,9 @@ def test_cuda_element_wise():
 def test_cuda_reduction_loop_only():
     @T.prim_func
     def reduction_loop_only_0(
-        A: T.Buffer[2, "float32"],
-        B: T.Buffer[2, "float32"],
-        C: T.Buffer[(), "float32"],
+        A: T.Buffer(2, "float32"),
+        B: T.Buffer(2, "float32"),
+        C: T.Buffer((), "float32"),
     ) -> None:
         for u_fused_0 in T.thread_binding(1, thread="blockIdx.x"):
             for u_fused_1 in T.thread_binding(1, thread="threadIdx.x"):
@@ -114,13 +115,12 @@ def test_cuda_reduction_loop_only():
                         C[()] = T.min(C[()], A[k0] / B[k0])
 
     mod = reduction_loop_only
-    actual = ms.TuneContext(
+    actual = generate_design_space(
+        kind="cuda",
         mod=mod,
         target=Target("nvidia/geforce-rtx-3080", host="llvm"),
-        space_generator=ms.space_generator.PostOrderApply(),
-        sch_rules=get_rules("cuda", ms.schedule_rule.AutoBind),
-        task_name="test",
-    ).generate_design_space()
+        types=ms.schedule_rule.AutoBind,
+    )
     check_sketches(
         mod,
         sketches=actual,
@@ -132,9 +132,9 @@ def test_cuda_reduction_loop_only():
 def test_cuda_zero_dim_add():
     @T.prim_func
     def zero_dim_add_0(
-        A: T.Buffer[(), "float32"],
-        B: T.Buffer[(), "float32"],
-        C: T.Buffer[(), "float32"],
+        A: T.Buffer((), "float32"),
+        B: T.Buffer((), "float32"),
+        C: T.Buffer((), "float32"),
     ) -> None:
         for u_fused_0 in T.thread_binding(1, thread="blockIdx.x"):
             for u_fused_1 in T.thread_binding(1, thread="threadIdx.x"):
@@ -145,13 +145,12 @@ def test_cuda_zero_dim_add():
                     C[()] = A[()] + B[()]
 
     mod = zero_dim_add
-    actual = ms.TuneContext(
+    actual = generate_design_space(
+        kind="cuda",
         mod=mod,
         target=Target("nvidia/geforce-rtx-3080", host="llvm"),
-        space_generator=ms.space_generator.PostOrderApply(),
-        sch_rules=get_rules("cuda", ms.schedule_rule.AutoBind),
-        task_name="test",
-    ).generate_design_space()
+        types=ms.schedule_rule.AutoBind,
+    )
     check_sketches(
         mod,
         sketches=actual,

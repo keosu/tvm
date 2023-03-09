@@ -17,7 +17,10 @@
 # pylint: disable=missing-module-docstring,missing-function-docstring,missing-class-docstring
 import tvm
 from tvm import meta_schedule as ms
-from tvm.meta_schedule.testing.space_generation import check_sketches
+from tvm.meta_schedule.testing.space_generation import (
+    check_sketches,
+    generate_design_space,
+)
 from tvm.script import tir as T
 from tvm.target import Target
 
@@ -56,8 +59,8 @@ class Add:
 def test_random_compute_location():
     @T.prim_func
     def add_0(
-        A: T.Buffer[(2048, 2048, 2048), "float32"],
-        B: T.Buffer[(2048, 2048, 2048), "float32"],
+        A: T.Buffer((2048, 2048, 2048), "float32"),
+        B: T.Buffer((2048, 2048, 2048), "float32"),
     ) -> None:
         # function attr dict
         T.func_attr({"global_symbol": "main"})
@@ -87,13 +90,13 @@ def test_random_compute_location():
     ]
 
     mod = Add
-    actual = ms.TuneContext(
+    actual = generate_design_space(
+        kind="llvm",
         mod=mod,
         target=Target("llvm"),
-        space_generator=ms.space_generator.PostOrderApply(),
+        types=None,
         sch_rules=[ms.schedule_rule.RandomComputeLocation()],
-        task_name="test",
-    ).generate_design_space()
+    )
     check_sketches(
         mod,
         sketches=actual,

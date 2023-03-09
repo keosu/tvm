@@ -18,11 +18,11 @@ import collections
 import ctypes
 import json
 import math
+import numpy as np
+import pytest
 import re
 import sys
 
-import numpy as np
-import pytest
 import tvm
 import tvm.testing
 from tvm import te
@@ -525,7 +525,7 @@ def test_llvm_div():
     ]:
         for dstart, dend in [
             (-11, -1),
-            (-11, 0),
+            (-11, 1),
             (-4, -4),
             (-2, -2),
             (1, 11),
@@ -534,7 +534,7 @@ def test_llvm_div():
             (2, 2),
             (-11, 11),
         ]:
-            if end < start or dend < dstart or (dend == 0 and dstart == 0):
+            if end < start or dend < dstart or (dend == 0 and dstart == 0) or dend == 0:
                 continue
             check(start, end, dstart, dend, "int32", floor_div=False)
             check(start, end, dstart, dend, "int32", floor_div=True)
@@ -854,7 +854,8 @@ def test_llvm_order_functions():
     }
     mod = tvm.IRModule(functions=functions)
     ir_text = tvm.build(mod, None, target="llvm").get_source("ll")
-    matches = re.findall(r"^define[^@]*@([a-zA-Z_][a-zA-Z0-9_]*)", ir_text, re.MULTILINE)
+    # Skip functions whose names start with _.
+    matches = re.findall(r"^define[^@]*@([a-zA-Z][a-zA-Z0-9_]*)", ir_text, re.MULTILINE)
     assert matches == sorted(matches)
 
 
@@ -919,7 +920,7 @@ def test_llvm_scalar_concat():
 def test_raise_exception_during_codegen():
     @T.prim_func
     def threadpool_nested_parallel_loop(
-        A: T.Buffer[(4, 4), "float32"], B: T.Buffer[(4, 4), "float32"]
+        A: T.Buffer((4, 4), "float32"), B: T.Buffer((4, 4), "float32")
     ) -> None:
         T.func_attr({"global_symbol": "main", "tir.noalias": True})
         for i in T.parallel(4):

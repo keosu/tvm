@@ -18,20 +18,22 @@
 
 import collections
 import inspect
-from typing import Callable, List, Mapping, Optional, Union, Tuple
+from typing import Callable, List, Mapping, Optional, Tuple, Union
 
 import tvm
 import tvm._ffi
 import tvm.runtime
-from tvm.runtime import Object
 from tvm.ir import BaseFunc, Range
-from .buffer import Buffer
-from .expr import Var, PrimExpr
+from tvm.runtime import Object, Scriptable
+
+from ..runtime.ndarray import NDArray
 from . import _ffi_api
+from .buffer import Buffer
+from .expr import PrimExpr, Var
 
 
 @tvm._ffi.register_object("tir.PrimFunc")
-class PrimFunc(BaseFunc):
+class PrimFunc(BaseFunc, Scriptable):
     """A function declaration expression.
 
     Parameters
@@ -48,9 +50,6 @@ class PrimFunc(BaseFunc):
     buffer_map : Map[tvm.tir.Var, tvm.tir.Buffer]
         The buffer binding map.
 
-    preflattened_buffer_map : Optional[Map[tvm.tir.Var, tvm.tir.Buffer]]
-        The buffer binding map, prior to any flattening.
-
     attrs: Optional[tvm.Attrs]
         Attributes of the function, can be None
 
@@ -64,14 +63,12 @@ class PrimFunc(BaseFunc):
         body,
         ret_type=None,
         buffer_map=None,
-        preflattened_buffer_map=None,
         attrs=None,
         span=None,
     ):
 
         param_list = []
         buffer_map = {} if buffer_map is None else buffer_map
-        preflattened_buffer_map = {} if preflattened_buffer_map is None else preflattened_buffer_map
         for x in params:
             x = tvm.runtime.convert(x) if not isinstance(x, Object) else x
             if isinstance(x, Buffer):
@@ -89,7 +86,6 @@ class PrimFunc(BaseFunc):
             body,
             ret_type,
             buffer_map,
-            preflattened_buffer_map,
             attrs,
             span,
         )  # type: ignore
@@ -115,7 +111,6 @@ class PrimFunc(BaseFunc):
             new_body,
             self.ret_type,
             self.buffer_map,
-            self.preflattened_buffer_map,
             self.attrs,
             span,
         )
@@ -175,39 +170,6 @@ class PrimFunc(BaseFunc):
         """
         return _ffi_api.Specialize(self, param_map)  # type: ignore
 
-    def script(self, tir_prefix: str = "T", show_meta: bool = False) -> str:
-        """Print IRModule into TVMScript
-
-        Parameters
-        ----------
-        tir_prefix : str
-            The tir namespace prefix
-
-        show_meta : bool
-            Whether to show meta information
-
-        Returns
-        -------
-        script : str
-            The TVM Script of the PrimFunc
-        """
-        return tvm._ffi.get_global_func("script.AsTVMScript")(
-            self, tir_prefix, show_meta
-        )  # type: ignore
-
-    def show(self, style: Optional[str] = None) -> None:
-        """
-        A sugar for print highlighted TVM script.
-        Parameters
-        ----------
-        style : str, optional
-            Pygments styles extended by "light" (default) and "dark", by default "light"
-        """
-        from tvm.script.highlight import cprint  # pylint: disable=import-outside-toplevel
-
-        # Use deferred import to avoid circular import while keeping cprint under tvm/script
-        cprint(self, style=style)
-
 
 @tvm._ffi.register_object("tir.TensorIntrin")
 class TensorIntrin(Object):
@@ -245,7 +207,7 @@ class TensorIntrin(Object):
         )  # type: ignore
 
     @staticmethod
-    def get(name: str):
+    def get(name: str, allow_missing: bool = False) -> Optional["TensorIntrin"]:
         """Look up a tensor intrinsic by its name.
 
         Parameters
@@ -253,12 +215,16 @@ class TensorIntrin(Object):
         name : str
             The name of the TensorIntrin to look up.
 
+        allow_missing : bool
+            Whether to allow missing tensor intrin. If False, raise an error if the tensor intrin
+        doesn't exist.
+
         Returns
         -------
-        result : TensorIntrin
-            The TensorIntrin with the specified name.
+        result : Optional[TensorIntrin]
+            The TensorIntrin with the specified name, or None if not found.
         """
-        return _ffi_api.TensorIntrinGet(name)  # pylint: type: ignore
+        return _ffi_api.TensorIntrinGet(name, allow_missing)  # pylint: type: ignore
 
 
 @tvm._ffi.register_object("tir.IndexMap")
@@ -510,6 +476,21 @@ class IndexMap(Object):
             The mapped shape
         """
         return _ffi_api.IndexMapMapShape(self, shape)
+
+    def map_ndarray(self, arr_src: NDArray) -> NDArray:
+        """Apply thie index map to transform the layout of the input NDArray
+
+        Parameters
+        ----------
+        arr_src : runtime.NDArray
+            The NDArray to be transformed
+
+        Returns
+        -------
+        arr_dst : runtime.NDArray
+            The transformed NDArray
+        """
+        return _ffi_api.IndexMapMapNDArray(self, arr_src)
 
     def inverse(self, shape: List[Union[Range, PrimExpr]]) -> "IndexMap":
         """Return the inverse of the map

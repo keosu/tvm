@@ -335,6 +335,8 @@ class SumExprNode : public CanonicalExprNode {
    * \return whether the cast can be safely pushed to children
    */
   bool CanPushCastToChildren(DataType dtype, Analyzer* analyzer) const {
+    bool is_min_value = dtype.bits() == 64 ? base == std::numeric_limits<int64_t>::lowest()
+                                           : base == -(1LL << (dtype.bits() - 1));
     // cast(dtype, arg_1 + arg_2 + ... arg_n) ==
     // cast(dtype, arg_1) + ... + cast(dtype, arg_n)
     // iff it is an upcast (dtype.bits >= self.dtype.bits) or all of
@@ -351,7 +353,7 @@ class SumExprNode : public CanonicalExprNode {
         }
       }
     }
-    if (base > 0) {
+    if (base > 0 || is_min_value) {
       res = res + make_const(dtype, base);
       if (!CastIsSafe(dtype, res, analyzer)) {
         return false;
@@ -366,7 +368,7 @@ class SumExprNode : public CanonicalExprNode {
         }
       }
     }
-    if (base < 0) {
+    if (base < 0 && !is_min_value) {
       res = res - make_const(dtype, -base);
       if (!CastIsSafe(dtype, res, analyzer)) {
         return false;
@@ -497,6 +499,8 @@ class SumExprNode : public CanonicalExprNode {
     return args;
   }
   static PrimExpr Normalize_(DataType dtype, const std::vector<SplitExpr>& args, int64_t base) {
+    bool is_min_value = dtype.bits() == 64 ? base == std::numeric_limits<int64_t>::lowest()
+                                           : base == -(1LL << (dtype.bits() - 1));
     // Positive scales first
     PrimExpr res = make_const(dtype, 0);
     for (size_t i = 0; i < args.size(); ++i) {
@@ -504,7 +508,7 @@ class SumExprNode : public CanonicalExprNode {
         res = res + args[i]->Normalize();
       }
     }
-    if (base > 0) {
+    if (base > 0 || is_min_value) {
       res = res + make_const(dtype, base);
     }
     // negative scales follows using sub.
@@ -513,7 +517,7 @@ class SumExprNode : public CanonicalExprNode {
         res = res - args[i]->NormalizeWithScale(-1);
       }
     }
-    if (base < 0) {
+    if (base < 0 && !is_min_value) {
       res = res - make_const(dtype, -base);
     }
     return res;
@@ -891,7 +895,7 @@ PrimExpr CanonicalSimplifier::Impl::VisitExpr_(const DivNode* op) {
           lhs.CopyOnWrite()->AddToSelf(pconst->value / cval);
         } else {
           // if 0 <= extra < cval, it means the extra can be eliminated.
-          if (TryCompare(temp, cval) != kLT) {
+          if (TryCompare(temp, cval) != CompareResult::kLT) {
             lhs.CopyOnWrite()->AddToSelf(SplitDivConst(ToSplitExpr(temp), cval, kTruncDiv), 1);
           }
         }
@@ -945,7 +949,8 @@ PrimExpr CanonicalSimplifier::Impl::VisitExpr_(const FloorDivNode* op) {
         lhs.CopyOnWrite()->AddToSelf(floordiv(pconst->value, cval));
       } else {
         // if 0 <= extra < cval, it means the extra can be eliminated.
-        if (!(TryCompare(temp, cval) == kLT && analyzer_->CanProveGreaterEqual(temp, 0))) {
+        if (!(TryCompare(temp, cval) == CompareResult::kLT &&
+              analyzer_->CanProveGreaterEqual(temp, 0))) {
           lhs.CopyOnWrite()->AddToSelf(SplitDivConst(ToSplitExpr(temp), cval, kFloorDiv), 1);
         }
       }
@@ -1052,7 +1057,7 @@ PrimExpr CanonicalSimplifier::Impl::VisitExpr_(const ModNode* op) {
           return truncmod(temp, c1.Eval());
         } else {
           // If temp < cval && temp >=0 then can remove the mod.
-          if (TryCompare(temp, cval) == kLT) {
+          if (TryCompare(temp, cval) == CompareResult::kLT) {
             return temp;
           } else {
             // contonue to use logic below.
@@ -1113,7 +1118,8 @@ PrimExpr CanonicalSimplifier::Impl::VisitExpr_(const FloorModNode* op) {
         return floormod(temp, c1.Eval());
       } else {
         // If temp < cval && temp >=0 then can remove the mod.
-        if (TryCompare(temp, cval) == kLT && analyzer_->CanProveGreaterEqual(temp, 0)) {
+        if (TryCompare(temp, cval) == CompareResult::kLT &&
+            analyzer_->CanProveGreaterEqual(temp, 0)) {
           return temp;
         } else {
           // contonue to use logic below.

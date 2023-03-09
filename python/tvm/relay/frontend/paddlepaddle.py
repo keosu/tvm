@@ -778,7 +778,7 @@ def convert_interpolate(g, op, block):
         for name in input_size_tensor:
             size = g.get_node(name)
             if len(infer_shape(size)) == 0:
-                shape = _op.reshape(shape, [-1])
+                size = _op.reshape(size, [-1])
             out_size.append(size)
         out_size = _op.concatenate(out_size, axis=0)
         out_size, infered = try_infer_value(out_size, parameters=g.get_params())
@@ -1084,6 +1084,19 @@ def convert_meshgrid(g, op, block):
         g.add_node(op.output("Out")[i], out)
 
 
+def convert_mish(g, op, block):
+    """Operator converter for mish."""
+
+    x = g.get_node(op.input("X")[0])
+    dtype = infer_type(x).checked_type.dtype
+    exp = _op.exp(x)
+    add = _op.add(exp, _expr.const(1.0, dtype))
+    log = _op.log(add)
+    tanh = _op.tanh(log)
+    out = _op.multiply(x, tanh)
+    g.add_node(op.output("Out")[0], out)
+
+
 def convert_mul(g, op, block):
     """Operator converter for mul."""
 
@@ -1138,6 +1151,32 @@ def convert_mv(g, op, block):
     y = _op.transpose(y)
     out = _op.nn.dense(x, y)
     out = _op.squeeze(out, axis=[-1])
+    g.add_node(op.output("Out")[0], out)
+
+
+def convert_norm(g, op, block):
+    """Operator converter for norm."""
+
+    x = g.get_node(op.input("X")[0])
+    axis = op.attr("axis")
+    axis_l = [axis]
+    epsilon = op.attr("epsilon")
+    out = _op.nn.l2_normalize(x, epsilon, axis_l)
+    g.add_node(op.output("Out")[0], out)
+
+
+def convert_one_hot_v2(g, op, block):
+    """Operator converter for one_hot_v2."""
+
+    x = g.get_node(op.input("X")[0])
+    depth = op.attr("depth")
+    dtype = op.attr("dtype")
+    dtype = _convert_dtype_value(dtype)
+    ndim = len(infer_shape(x))
+    on_value = _op.const(1)
+    off_value = _op.const(0)
+    axis = ndim
+    out = _op.one_hot(x, on_value, off_value, depth, axis, dtype)
     g.add_node(op.output("Out")[0], out)
 
 
@@ -1715,10 +1754,10 @@ def convert_scatter(g, op, block):
     index = _op.transform.broadcast_to(index, shape)
 
     if overwrite:
-        out = _op.scatter(x, index, updates, axis=0)
+        out = _op.scatter_elements(x, index, updates, axis=0)
     else:
-        out = _op.scatter_add(_op.zeros_like(x), index, updates, axis=0)
-        out += _op.scatter(x, index, _op.zeros_like(updates), axis=0)
+        out = _op.scatter_elements(_op.zeros_like(x), index, updates, axis=0, reduction="add")
+        out += _op.scatter_elements(x, index, _op.zeros_like(updates), axis=0)
     g.add_node(op.output("Out")[0], out)
 
 
@@ -1756,6 +1795,14 @@ def convert_shape(g, op, block):
 
     x = g.get_node(op.input("Input")[0])
     out = shape_of(x, dtype="int32")
+    g.add_node(op.output("Out")[0], out)
+
+
+def convert_silu(g, op, block):
+    """Operator converter for silu."""
+
+    x = g.get_node(op.input("X")[0])
+    out = _op.multiply(x, _op.sigmoid(x))
     g.add_node(op.output("Out")[0], out)
 
 
@@ -1800,7 +1847,7 @@ def convert_slice(g, op, block):
 
     if len(axes) < dims:
         if isinstance(starts, _expr.Expr):
-            starts = _op.scatter(
+            starts = _op.scatter_elements(
                 _op.const([0] * dims, dtype=infer_type(starts).checked_type.dtype),
                 indices,
                 starts,
@@ -1831,7 +1878,7 @@ def convert_slice(g, op, block):
 
     if len(axes) < dims:
         if isinstance(ends, _expr.Expr):
-            ends = _op.scatter(
+            ends = _op.scatter_elements(
                 _expr.const(
                     np.array([np.iinfo(np.int32).max] * dims),
                     dtype=infer_type(ends).checked_type.dtype,
@@ -1866,7 +1913,7 @@ def convert_slice(g, op, block):
 
     if len(axes) < dims:
         if isinstance(strides, _expr.Expr):
-            strides = _op.scatter(
+            strides = _op.scatter_elements(
                 _expr.const(
                     np.array([1] * dims),
                     dtype=infer_type(strides).checked_type.dtype,
@@ -1884,7 +1931,8 @@ def convert_slice(g, op, block):
         strides = _op.const([1] * dims, dtype="int64")
 
     out = _op.strided_slice(data, begin=starts, end=ends, strides=strides)
-    if decrease_axis:
+    out_shape = infer_shape(out)
+    if decrease_axis and len(out_shape) > 1:
         out = _op.squeeze(out, axis=decrease_axis)
     g.add_node(op.output("Out")[0], out)
 
@@ -1920,6 +1968,19 @@ def convert_softsign(g, op, block):
     x = g.get_node(op.input("X")[0])
     dtype = infer_type(x).checked_type.dtype
     out = x / (_op.const(1.0, dtype) + _op.abs(x))
+    g.add_node(op.output("Out")[0], out)
+
+
+def convert_softshrink(g, op, block):
+    """Operator converter for softshrink."""
+
+    x = g.get_node(op.input("X")[0])
+    dtype = infer_type(x).checked_type.dtype
+    threshold = _expr.const(op.attr("lambda"), dtype=dtype)
+    zeros = _op.zeros_like(x)
+    out = _op.where(x < -threshold, x + threshold, zeros) + _op.where(
+        x > threshold, x - threshold, zeros
+    )
     g.add_node(op.output("Out")[0], out)
 
 
@@ -1967,6 +2028,18 @@ def convert_split(g, op, block):
         g.add_node(op.output("Out")[i], out_i)
 
 
+def convert_stack(g, op, blcok):
+    """Operator converter for stack."""
+
+    x = op.input("X")
+    all_inputs = []
+    for inp in x:
+        all_inputs.append(g.get_node(inp))
+    axis = op.attr("axis")
+    out = _op.stack(all_inputs, axis)
+    g.add_node(op.output("Y")[0], out)
+
+
 def convert_square(g, op, block):
     """Operator converter for square."""
 
@@ -1998,6 +2071,68 @@ def convert_swish(g, op, block):
     g.add_node(op.output("Out")[0], out)
 
 
+def convert_tile(g, op, block):
+    """Operator converter for tile."""
+
+    x = g.get_node(op.input("X")[0])
+    if op.input("RepeatTimes"):
+        reps = g.get_node(op.input("RepeatTimes")[0])
+        reps, infered = try_infer_value(reps, g.get_params())
+        if infered:
+            reps = reps.tolist()
+    elif op.input("repeat_times_tensor"):
+        reps = []
+        for rep_value in op.input("repeat_times_tensor"):
+            rep_value = g.get_node(rep_value).astype("int32")
+            reps.append(rep_value)
+        reps = _op.concatenate(reps, axis=0)
+        reps, infered = try_infer_value(reps, g.get_params())
+        if infered:
+            reps = reps.tolist()
+    else:
+        reps = op.attr("repeat_times")
+        infered = True
+
+    if not infered:
+        msg = 'Value {} in attribute "repeat_times" of operator Tile is not "valid."'
+        raise tvm.error.OpAttributeInvalid(msg.format(reps))
+
+    op_func = get_relay_op(op.type)
+    out = op_func(x, reps=reps)
+    g.add_node(op.output("Out")[0], out)
+
+
+def convert_topk(g, op, block):
+    """Operator converter for topk."""
+
+    data = g.get_node(op.input("X")[0])
+    if op.input("K"):
+        k = g.get_node(op.input("K")[0])
+    else:
+        k = op.attr("k")
+
+    largest = op.attr("largest")
+    is_ascend = not largest
+    axis = op.attr("axis")
+
+    value_names = op.output("Out")
+    indice_names = op.output("Indices")
+
+    out = None
+    indice = None
+    if value_names and indice_names:
+        out, indice = _op.topk(data=data, k=k, axis=axis, ret_type="both", is_ascend=is_ascend)
+    elif value_names:
+        out = _op.topk(data=data, k=k, axis=axis, ret_type="values", is_ascend=is_ascend)
+    elif indice_names:
+        indice = _op.topk(data=data, k=k, axis=axis, ret_type="indices", is_ascend=is_ascend)
+
+    if out is not None:
+        g.add_node(value_names[0], out)
+    if indice is not None:
+        g.add_node(indice_names[0], indice)
+
+
 def convert_transpose(g, op, block):
     """Operator converter for transpose."""
 
@@ -2014,6 +2149,36 @@ def convert_unsqueeze(g, op, block):
     for axis in axes:
         x = _op.expand_dims(x, axis=axis, num_newaxis=1)
     g.add_node(op.output("Out")[0], x)
+
+
+def convert_unstack(g, op, block):
+    """Operator converter for unstack."""
+
+    x = g.get_node(op.input("X")[0])
+    axis = op.attr("axis")
+    indices_or_sections = len(op.output("Y"))
+    outs = _op.split(x, indices_or_sections=indices_or_sections, axis=axis)
+    for i, out in enumerate(outs):
+        out = _op.squeeze(out, axis=axis)
+        g.add_node(op.output("Y")[i], out)
+
+
+def convert_where(g, op, block):
+    """Operator converter for where."""
+
+    condition = g.get_node(op.input("Condition")[0])
+    x = g.get_node(op.input("X")[0])
+    y = g.get_node(op.input("Y")[0])
+    out = _op.where(condition, x, y)
+    g.add_node(op.output("Out")[0], out)
+
+
+def convert_where_index(g, op, block):
+    """Operator converter for where_index."""
+
+    condition = g.get_node(op.input("Condition")[0])
+    out = _op.argwhere(condition)
+    g.add_node(op.output("Out")[0], out)
 
 
 _convert_map = {
@@ -2042,6 +2207,7 @@ _convert_map = {
     "cosh": convert_unary_op,
     "cumsum": convert_cumsum,
     "depthwise_conv2d": convert_conv2d,
+    "depthwise_conv2d_transpose": convert_conv2d_transpose,
     "dot": convert_dot,
     "dropout": convert_dropout,
     "elementwise_add": convert_elementwise_op,
@@ -2099,10 +2265,13 @@ _convert_map = {
     "matmul": convert_matmul,
     "matmul_v2": convert_matmul,
     "meshgrid": convert_meshgrid,
+    "mish": convert_mish,
     "mul": convert_mul,
     "mv": convert_mv,
     "nearest_interp_v2": convert_interpolate,
+    "norm": convert_norm,
     "not_equal": convert_elementwise_op,
+    "one_hot_v2": convert_one_hot_v2,
     "pad1d": convert_padding,
     "pad2d": convert_padding,
     "pad3d": convert_padding,
@@ -2132,6 +2301,7 @@ _convert_map = {
     "shape": convert_shape,
     "sigmoid": convert_unary_op,
     "sign": convert_unary_op,
+    "silu": convert_silu,
     "sin": convert_unary_op,
     "sinh": convert_unary_op,
     "size": convert_size,
@@ -2139,7 +2309,9 @@ _convert_map = {
     "softmax": convert_softmax,
     "softplus": convert_softplus,
     "softsign": convert_softsign,
+    "softshrink": convert_softshrink,
     "split": convert_split,
+    "stack": convert_stack,
     "strided_slice": convert_slice,
     "sqrt": convert_unary_op,
     "square": convert_square,
@@ -2147,8 +2319,13 @@ _convert_map = {
     "swish": convert_swish,
     "tan": convert_unary_op,
     "tanh": convert_unary_op,
+    "tile": convert_tile,
+    "top_k_v2": convert_topk,
     "transpose2": convert_transpose,
     "unsqueeze2": convert_unsqueeze,
+    "unstack": convert_unstack,
+    "where": convert_where,
+    "where_index": convert_where_index,
 }
 
 

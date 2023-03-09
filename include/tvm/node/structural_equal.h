@@ -154,6 +154,13 @@ class SEqualReducer {
     virtual void DeferFail(const ObjectPathPair& mismatch_paths) = 0;
 
     /*!
+     * \brief Check if fail defferal is enabled.
+     *
+     * \return false if the fail deferral is not enabled, true otherwise.
+     */
+    virtual bool IsFailDeferralEnabled() = 0;
+
+    /*!
      * \brief Lookup the graph node equal map for vars that are already mapped.
      *
      *  This is an auxiliary method to check the Map<Var, Value> equality.
@@ -322,6 +329,50 @@ class SEqualReducer {
   const PathTracingData* tracing_data_ = nullptr;
   /*! \brief Whether or not to map free vars. */
   bool map_free_vars_ = false;
+};
+
+/*! \brief The default handler for equality testing.
+ *
+ * Users can derive from this class and override the DispatchSEqualReduce method,
+ * to customize equality testing.
+ */
+class SEqualHandlerDefault : public SEqualReducer::Handler {
+ public:
+  SEqualHandlerDefault(bool assert_mode, Optional<ObjectPathPair>* first_mismatch,
+                       bool defer_fails);
+  virtual ~SEqualHandlerDefault();
+
+  bool SEqualReduce(const ObjectRef& lhs, const ObjectRef& rhs, bool map_free_vars,
+                    const Optional<ObjectPathPair>& current_paths) override;
+  void DeferFail(const ObjectPathPair& mismatch_paths) override;
+  bool IsFailDeferralEnabled() override;
+  ObjectRef MapLhsToRhs(const ObjectRef& lhs) override;
+  void MarkGraphNode() override;
+
+  /*!
+   * \brief The entry point for equality testing
+   * \param lhs The left operand.
+   * \param rhs The right operand.
+   * \param map_free_vars Whether or not to remap variables if possible.
+   * \return The equality result.
+   */
+  virtual bool Equal(const ObjectRef& lhs, const ObjectRef& rhs, bool map_free_vars);
+
+ protected:
+  /*!
+   * \brief The dispatcher for equality testing of intermediate objects
+   * \param lhs The left operand.
+   * \param rhs The right operand.
+   * \param map_free_vars Whether or not to remap variables if possible.
+   * \param current_paths Optional paths to `lhs` and `rhs` objects, for error traceability.
+   * \return The equality result.
+   */
+  virtual bool DispatchSEqualReduce(const ObjectRef& lhs, const ObjectRef& rhs, bool map_free_vars,
+                                    const Optional<ObjectPathPair>& current_paths);
+
+ private:
+  class Impl;
+  Impl* impl;
 };
 
 }  // namespace tvm

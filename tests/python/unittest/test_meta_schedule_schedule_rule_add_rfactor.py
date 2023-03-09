@@ -17,7 +17,10 @@
 # pylint: disable=missing-module-docstring,missing-function-docstring,missing-class-docstring
 from tvm import meta_schedule as ms
 from tvm.meta_schedule.testing import te_workload
-from tvm.meta_schedule.testing.space_generation import check_sketches
+from tvm.meta_schedule.testing.space_generation import (
+    check_sketches,
+    generate_design_space,
+)
 from tvm.script import tir as T
 from tvm.target import Target
 from tvm.te import create_prim_func
@@ -26,9 +29,9 @@ from tvm.te import create_prim_func
 def test_cpu_matmul():
     @T.prim_func
     def cpu_matmul_0(
-        A: T.Buffer[(4, 512), "float32"],
-        B: T.Buffer[(512, 4), "float32"],
-        C: T.Buffer[(4, 4), "float32"],
+        A: T.Buffer((4, 512), "float32"),
+        B: T.Buffer((512, 4), "float32"),
+        C: T.Buffer((4, 4), "float32"),
     ) -> None:
         T.func_attr({"global_symbol": "main", "tir.noalias": True})
         for i0, i1, i2 in T.grid(4, 4, 512):
@@ -42,9 +45,9 @@ def test_cpu_matmul():
 
     @T.prim_func
     def cpu_matmul_1(
-        A: T.Buffer[(4, 512), "float32"],
-        B: T.Buffer[(512, 4), "float32"],
-        C: T.Buffer[(4, 4), "float32"],
+        A: T.Buffer((4, 512), "float32"),
+        B: T.Buffer((512, 4), "float32"),
+        C: T.Buffer((4, 4), "float32"),
     ) -> None:
         T.func_attr({"global_symbol": "main", "tir.noalias": True})
         C_rf = T.alloc_buffer([4, 4, 128], dtype="float32")
@@ -70,9 +73,9 @@ def test_cpu_matmul():
 
     @T.prim_func
     def cpu_matmul_2(
-        A: T.Buffer[(4, 512), "float32"],
-        B: T.Buffer[(512, 4), "float32"],
-        C: T.Buffer[(4, 4), "float32"],
+        A: T.Buffer((4, 512), "float32"),
+        B: T.Buffer((512, 4), "float32"),
+        C: T.Buffer((4, 4), "float32"),
     ) -> None:
         T.func_attr({"global_symbol": "main", "tir.noalias": True})
         C_rf = T.alloc_buffer([4, 4, 4], dtype="float32")
@@ -104,13 +107,12 @@ def test_cpu_matmul():
         ("SamplePerfectTile", [4, 128]),
     ]
     mod = create_prim_func(te_workload.matmul(n=4, m=4, k=512))
-    actual = ms.TuneContext(
+    actual = generate_design_space(
+        kind="llvm",
         mod=mod,
         target=Target("llvm --num-cores=32"),
-        space_generator=ms.space_generator.PostOrderApply(),
-        sch_rules=[ms.schedule_rule.AddRFactor()],
-        task_name="test",
-    ).generate_design_space()
+        types=ms.schedule_rule.AddRFactor,
+    )
     check_sketches(
         mod,
         sketches=actual,
@@ -122,10 +124,10 @@ def test_cpu_matmul():
 def test_cpu_argmax():
     @T.prim_func
     def argmax(
-        idx: T.Buffer[(128, 128), "int32"],
-        val: T.Buffer[(128, 128), "float32"],
-        argmax_v0: T.Buffer[(128,), "int32"],
-        argmax_v1: T.Buffer[(128,), "float32"],
+        idx: T.Buffer((128, 128), "int32"),
+        val: T.Buffer((128, 128), "float32"),
+        argmax_v0: T.Buffer((128,), "int32"),
+        argmax_v1: T.Buffer((128,), "float32"),
     ) -> None:
         for i0, i1 in T.grid(128, 128):
             with T.block("argmax"):
@@ -145,10 +147,10 @@ def test_cpu_argmax():
 
     @T.prim_func
     def argmax_0(
-        idx: T.Buffer[(128, 128), "int32"],
-        val: T.Buffer[(128, 128), "float32"],
-        argmax_v0: T.Buffer[128, "int32"],
-        argmax_v1: T.Buffer[128, "float32"],
+        idx: T.Buffer((128, 128), "int32"),
+        val: T.Buffer((128, 128), "float32"),
+        argmax_v0: T.Buffer(128, "int32"),
+        argmax_v1: T.Buffer(128, "float32"),
     ) -> None:
         for i0, i1 in T.grid(128, 128):
             with T.block("argmax"):
@@ -167,10 +169,10 @@ def test_cpu_argmax():
 
     @T.prim_func
     def argmax_1(
-        idx: T.Buffer[(128, 128), "int32"],
-        val: T.Buffer[(128, 128), "float32"],
-        argmax_v0: T.Buffer[128, "int32"],
-        argmax_v1: T.Buffer[128, "float32"],
+        idx: T.Buffer((128, 128), "int32"),
+        val: T.Buffer((128, 128), "float32"),
+        argmax_v0: T.Buffer(128, "int32"),
+        argmax_v1: T.Buffer(128, "float32"),
     ) -> None:
         argmax_v0_rf = T.alloc_buffer([128, 16], dtype="int32")
         argmax_v1_rf = T.alloc_buffer([128, 16], dtype="float32")
@@ -214,10 +216,10 @@ def test_cpu_argmax():
 
     @T.prim_func
     def argmax_2(
-        idx: T.Buffer[(128, 128), "int32"],
-        val: T.Buffer[(128, 128), "float32"],
-        argmax_v0: T.Buffer[128, "int32"],
-        argmax_v1: T.Buffer[128, "float32"],
+        idx: T.Buffer((128, 128), "int32"),
+        val: T.Buffer((128, 128), "float32"),
+        argmax_v0: T.Buffer(128, "int32"),
+        argmax_v1: T.Buffer(128, "float32"),
     ) -> None:
         # body
         # with T.block("root")
@@ -269,13 +271,12 @@ def test_cpu_argmax():
         ("SamplePerfectTile", [8, 16]),
     ]
     mod = argmax
-    actual = ms.TuneContext(
+    actual = generate_design_space(
+        kind="llvm",
         mod=mod,
         target=Target("llvm --num-cores=32"),
-        space_generator=ms.space_generator.PostOrderApply(),
-        sch_rules=[ms.schedule_rule.AddRFactor()],
-        task_name="test",
-    ).generate_design_space()
+        types=ms.schedule_rule.AddRFactor,
+    )
     check_sketches(
         mod,
         sketches=actual,
